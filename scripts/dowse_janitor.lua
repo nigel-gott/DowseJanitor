@@ -66,7 +66,7 @@ function runMacro(config)
             timer = now
             srReadScreen()
             tryDowse(config)
-            updateLog()
+            updateLog(config)
         end
 
         if lsButtonText(lsScreenX - 110, lsScreenY - 30, z, 100, 0xFFFFFFff, "End script") then
