@@ -1,6 +1,6 @@
 # DowseJanitor
 
-Automatically dowses, moves your character and logs the dowsing results (what was found and where) to text files.
+Automatically dowses, if enabled moves your character and logs the dowsing results (what was found and where) to text files. Can be run passively whilst you travel about doing other things / chatting, just as long as you go to the main window and scroll through all the dowses it has done every so often!
 
 ## Installation
 
