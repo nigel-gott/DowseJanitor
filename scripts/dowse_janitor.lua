@@ -2,8 +2,17 @@ dofile("common.inc")
 dofile("settings.inc")
 dofile("screen_reader_common.inc")
 
+NEARBY_TEXT = "nearby"
+NOTHING_TEXT = "nothing"
+ONTOP_TEXT = "ontop"
+RECOGNIZE_TEXT = "recognize"
+
+NEARBY_DISITANCE = 10
+ONTOP_DISTANCE = 1
+
+
 METAL_NAMES = {
-    "nothing",
+    RECOGNIZE_TEXT,
     "Copper",
     "Iron",
     "Tin",
@@ -19,7 +28,7 @@ METAL_NAMES = {
     "Magnesiun",
     "Platinum",
     "Gold",
-    "recognize",
+    NOTHING_TEXT,
 }
 
 RED = 0xFF2020ff
@@ -28,45 +37,41 @@ WHITE = 0xFFFFFFff
 
 DOWSING_TABLE_FILENAME = "dowsing_table.txt"
 DOWSING_CSV_FILENAME = "dowsing_csv.txt"
+SOUND_FILENAME = "cheer.wav"
 
-NEARBY_TEXT = "nearby"
 
 askText = [[If you are using automove make sure the chat is minimized / not selected.
-Make sure that the main chat tab is open! You can scroll through the main tab and the macro will load and save all the data it sees inside.
+Make sure that the main chat tab is open as the macro logs dowses by reading the main chat tab.
+Because of this however you can use other chat tabs and occasionally go back to the main chat tab, scroll through all the missed results and the macro should see and log them all.
 Find the outputted data in C:\Games\Automato\games\ATITD\scripts in the files dowse_csv.txt and dowse_table.txt]]
 
 NUM_STEPS = 5
 
+added_this_run = 0
+latest_found = "Nothing found so far."
+
+-- Script start
 function doit()
-    local config = getUserParams()
+    config = getUserParams()
     askForWindow(askText)
-    runMacro(config)
+    runMacro()
 end
 
-added_this_run = 0
-
-latest_found = "Nothing found so far."
-function runMacro(config)
-    result, dowsing_table = deserialize(DOWSING_TABLE_FILENAME)
-    dowsing_table = dowsing_table or {}
-
-    if not result then
-        for i=1,#METAL_NAMES do
-            dowsing_table[METAL_NAMES[i]] = {}
-        end
-    end
+function runMacro()
+    setupDowsingTable()
 
     local timer = lsGetTimer()
 
     while true do
         checkBreak()
 
+        -- Slow the number of updates to reduce client lag whilst leaving the Automato UI responsive
         local now = lsGetTimer()
         if now - timer > 500 then
             timer = now
             srReadScreen()
-            tryDowse(config)
-            updateLog(config)
+            tryDowse()
+            updateLog()
         end
 
         if lsButtonText(lsScreenX - 110, lsScreenY - 30, z, 100, 0xFFFFFFff, "End script") then
@@ -81,7 +86,30 @@ function runMacro(config)
     end
 end
 
-function tryDowse(config)
+function setupDowsingTable()
+    result, dowsing_table = deserialize(DOWSING_TABLE_FILENAME)
+    dowsing_table = dowsing_table or {}
+
+    for i=1,#METAL_NAMES do
+        local name = getMetalName(i)
+        if not dowsing_table[name] then
+            dowsing_table[name] = {}
+        end
+    end
+end
+
+function getMetalName(name)
+    if type(name) == "number" then
+        name = METAL_NAMES[name]
+    end
+
+    if name == RECOGNIZE_TEXT then
+        name = "Unrecognized(" .. config.perception .. ")"
+    end
+    return name
+end
+
+function tryDowse()
     local dowse_icon = srFindImage("dowse.png");
     if dowse_icon then
         safeClick(dowse_icon[0]+5,dowse_icon[1],1);
@@ -95,33 +123,22 @@ function tryDowse(config)
     end
 end
 
-function updateLog(config)
+function updateLog()
     local chat = getChatText()
     local changed = false
     for line=1, #chat do
         local line_text = chat[line][2]
-        local match = ""
-        for i=1,#METAL_NAMES do
-            match = string.match(line_text, METAL_NAMES[i])
-            if match then
-                break
-            end
-        end
-        local nearby = string.match(line_text, NEARBY_TEXT)
-        local nothing = match == "nothing" and "nothing" or false
-        local x,y = string.match(line_text, "(%-?[%d ]+) (%-?[%d ]+).")
-        if match and x and y then
-            y = y:gsub(" ", "")
-            x = x:gsub(" ", "")
-            local index = x .. "," .. y
-            if not dowsing_table[match][index] then
+        local match, coords, nearby, nothing = parseChatLine(line_text)
+        if match and coords then
+            match = getMetalName(match)
+            if not dowsing_table[match][coords] then
                 if not nothing then
                     if config.play_sound then
-                        lsPlaySound("cheer.wav");
+                        lsPlaySound(SOUND_FILENAME);
                     end
-                    latest_found = latest_found .. "\n Found " .. match .. " at " .. index .. "!"
+                    latest_found = latest_found .. "\n Found " .. match .. " at " .. coords .. "!"
                 end
-                dowsing_table[match][index] = nearby and "nearby" or nothing or "ontop"
+                dowsing_table[match][coords] = nearby and NEARBY_DISITANCE or nothing and 0 or ONTOP_DISTANCE
                 added_this_run = added_this_run + 1
                 changed = true
             end
@@ -130,6 +147,28 @@ function updateLog(config)
     if changed then
         writeLog()
     end
+end
+
+function parseChatLine(line_text)
+    local match = ""
+    for i=1,#METAL_NAMES do
+        match = string.match(line_text, METAL_NAMES[i])
+        if match then
+            break
+        end
+    end
+    local nearby = string.match(line_text, NEARBY_TEXT)
+    local nothing = match == NOTHING_TEXT and NOTHING_TEXT or false
+
+    local coords
+    local x,y = string.match(line_text, "(%-?[%d ]+) (%-?[%d ]+).")
+    if x and y then
+        -- Sometimes the x and y coords have a space between the - symbol and the rest of the number. Strip it out.
+        y = y:gsub(" ", "")
+        x = x:gsub(" ", "")
+        coords = x .. "," .. y
+    end
+    return match, coords, nearby, nothing
 end
 
 function writeLog()
@@ -141,25 +180,27 @@ end
 
 function createCSV()
     local csv = ""
-    for i=1, #METAL_NAMES do
-        local metal_name = METAL_NAMES[i]
+    for metal_name,_ in pairs(dowsing_table) do
+
         csv = csv .. "\n" .. metal_name .. ":\n ---------------------------- \n"
         for key,value in pairs(dowsing_table[metal_name]) do
-            csv = csv .. key .. "\n"
+            local distance = ""
+            if config.distance_column and metal_name ~= NOTHING_TEXT then
+                distance = "," .. value
+            end
+            csv = csv .. key .. distance .. "\n"
         end
     end
     return csv
 end
 
-
-
+-- Hacky modified serialize.lua
 function serialize(o, filename)
     local outputFile = io.open("scripts/" .. filename,"w");
     if type(o) == "table" then outputFile:write("return\n"); end
     serializeInternal(o,outputFile);
     outputFile:close();
 end
-
 
 function deserialize(filename)
     filename = "scripts/" .. filename
@@ -222,14 +263,16 @@ X_PADDING = 5
 function getUserParams()
     local is_done = false
     local config = {play_sound=readSetting("play_sound",true), walk_distance=readSetting("walk_distance",10),
-        auto_move=readSetting("auto_move",true)}
+        auto_move=readSetting("auto_move",true), perception=readSetting("perception",0), distance_column=readSetting("distance_column",false)}
     while not is_done do
         current_y = 10
 
-        config.auto_move = lsCheckBox(X_PADDING, current_y, 10, WHITE, "Auto move using the arrow keys?", config.auto_move)
-        current_y = 40
+        config.auto_move = drawCheckBox("Auto move using the arrow keys?", config.auto_move)
         config.walk_distance = drawNumberEditBox("walk_distance", "Distance to walk after each dowse?", config.walk_distance)
-        config.play_sound = lsCheckBox(X_PADDING, current_y, 10, WHITE, "Play sound on metal find?", config.play_sound)
+        config.perception = drawNumberEditBox("perception", "What is your perception?", config.perception)
+        config.play_sound = drawCheckBox("Play sound on metal find?", config.play_sound)
+        config.distance_column = drawCheckBox("Generate distance column?", config.distance_column)
+        drawTextUsingCurrent("Distance = 10 for a dowse which is nearby the vein, 1 for a dowse ontop of vein.", WHITE)
         got_user_params = true
         is_done = true
         for k,v in pairs(config) do
@@ -248,7 +291,14 @@ function getUserParams()
     writeSetting("play_sound",config.play_sound)
     writeSetting("walk_distance",config.walk_distance)
     writeSetting("auto_move",config.auto_move)
+    writeSetting("distance_column",config.distance_column)
     return config
+end
+
+function drawCheckBox(text, default)
+    local result = lsCheckBox(X_PADDING, current_y, 10, WHITE, text, default)
+    current_y = current_y + 30
+    return result
 end
 
 function drawNumberEditBox(key, text, default)
@@ -259,7 +309,7 @@ function drawEditBox(key, text, default, validateNumber)
     drawTextUsingCurrent(text, WHITE)
     local width = validateNumber and 50 or 200
     local height = 30
-    local done, result = lsEditBox(key, X_PADDING, current_y, 0, width, height, 1.0, 1.0, BLACK, default)
+    local _, result = lsEditBox(key, X_PADDING, current_y, 0, width, height, 1.0, 1.0, BLACK, default)
     if validateNumber then
         result = tonumber(result)
     elseif result == "" then
