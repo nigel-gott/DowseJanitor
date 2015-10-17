@@ -43,6 +43,7 @@ function doit()
     runMacro(config)
 end
 
+added_this_run = 0
 
 latest_found = "Nothing found so far."
 function runMacro(config)
@@ -73,7 +74,7 @@ function runMacro(config)
         end
 
         lsPrintWrapped(10, 10, z, lsScreenX - 10, 1.0, 1.0, 0xFFFFFFff,
-            latest_found)
+            added_this_run .. " entries logged this run.\n" .. latest_found)
 
         lsDoFrame()
         lsSleep(50)
@@ -121,6 +122,7 @@ function updateLog(config)
                     latest_found = latest_found .. "\n Found " .. match .. " at " .. index .. "!"
                 end
                 dowsing_table[match][index] = nearby and "nearby" or nothing or "ontop"
+                added_this_run = added_this_run + 1
                 changed = true
             end
         end
