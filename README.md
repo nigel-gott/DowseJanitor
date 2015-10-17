@@ -8,7 +8,7 @@ Automatically dowses, moves your character and logs the dowsing results (what wa
 
 ## Setup
 
-- Enable Options -> Interface Options -> Movement -> Use arrow keys for movement
+- Enable Options -> Interface Options -> Movement -> Use arrow keys for movement.
 - Enable Options -> Chat Options -> Main Chat -> Minimized chat-channels are still visible.
 
 ## Using the macro
