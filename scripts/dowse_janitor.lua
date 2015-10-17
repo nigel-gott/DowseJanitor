@@ -1,6 +1,7 @@
 dofile("common.inc")
 dofile("settings.inc")
 dofile("screen_reader_common.inc")
+json = dofile("json.lua")
 
 NEARBY_TEXT = "nearby"
 NOTHING_TEXT = "nothing"
@@ -37,6 +38,7 @@ WHITE = 0xFFFFFFff
 
 DOWSING_TABLE_FILENAME = "dowsing_table.txt"
 DOWSING_CSV_FILENAME = "dowsing_csv.txt"
+DOWSING_JSON_FILENAME = "dowsing_json.txt"
 SOUND_FILENAME = "cheer.wav"
 
 
@@ -106,6 +108,9 @@ function getMetalName(name)
     if name == RECOGNIZE_TEXT then
         name = "Unrecognized(" .. config.perception .. ")"
     end
+    if name == NOTHING_TEXT then
+        name = "Nothing(" .. config.perception .. ")"
+    end
     return name
 end
 
@@ -136,7 +141,7 @@ function updateLog()
                     if config.play_sound then
                         lsPlaySound(SOUND_FILENAME);
                     end
-                    latest_found = latest_found .. "\n Found " .. match .. " at " .. coords .. "!"
+                    latest_found = "\n Found " .. match .. " at " .. coords .. "! \n" .. latest_found
                 end
                 dowsing_table[match][coords] = nearby and NEARBY_DISITANCE or nothing and 0 or ONTOP_DISTANCE
                 added_this_run = added_this_run + 1
@@ -175,6 +180,7 @@ function writeLog()
     local csv = createCSV()
     serialize(csv, DOWSING_CSV_FILENAME)
     serialize(dowsing_table, DOWSING_TABLE_FILENAME)
+    serialize(json.encode(dowsing_table), DOWSING_JSON_FILENAME)
 end
 
 
