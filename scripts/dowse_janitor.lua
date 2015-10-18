@@ -206,9 +206,6 @@ function updateLog()
     local changed = false
     for line=1, #chat do
         local line_text = chat[line][2]
-        if TEST then
-            lsPrintln(line_text)
-        end
         local result = parseChatLine(line_text)
         if result then
             if updateTableEntry(result) then
@@ -270,19 +267,23 @@ function parseChatLine(line_text)
 
     local result
     local x,y = string.match(line_text, "(%-?[%d ]+) (%-?[%d ]+).")
-    if (match or unrecognized) and x and y and type(x) == "number" and type(y) == "number" then
-        -- Sometimes the x and y coords have a space between the - symbol and the rest of the number. Strip it out.
+    if (match or unrecognized) and x and y  then
         y = y:gsub(" ", "")
         x = x:gsub(" ", "")
-        if unrecognized then
-            if config.perception > 0 then
-                ore_id = unrecognized_table[config.perception]
-            else
-                lsPrintln("ERROR: unrecognized vein with 0 perception!")
-                return nil
+        y = tonumber(y)
+        x = tonumber(x)
+        if x and y then
+            -- Sometimes the x and y coords have a space between the - symbol and the rest of the number. Strip it out.
+            if unrecognized then
+                if config.perception > 0 then
+                    ore_id = unrecognized_table[config.perception]
+                else
+                    lsPrintln("ERROR: unrecognized vein with 0 perception!")
+                    return nil
+                end
             end
+            result = {index=x .. "," .. y, x=x, y=y, ore_id=ore_id, nearby=nearby, unrecognized=unrecognized, perception=config.perception, match=ORES[ore_id].name }
         end
-        result = {index=x .. "," .. y, x=x, y=y, ore_id=ore_id, nearby=nearby, unrecognized=unrecognized, perception=config.perception, match=ORES[ore_id].name}
     end
     return result
 end
