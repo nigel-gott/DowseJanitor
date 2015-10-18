@@ -246,7 +246,7 @@ function updateTableEntry(result)
         lsPrintln("ERROR:" .. ore.name .. " recognized at a lower perception than required! " .. ore.recognized .. " > " .. result.perception)
         return false
     end
-    return not dowsing_table[result.index] or result.perception > dowsing_table[result.index].perception
+    return not dowsing_table[result.index]
 end
 
 function updateServer(result)
@@ -270,12 +270,11 @@ function parseChatLine(line_text)
 
     local result
     local x,y = string.match(line_text, "(%-?[%d ]+) (%-?[%d ]+).")
-    if (match or unrecognized) and x and y then
+    if (match or unrecognized) and x and y and type(x) == "number" and type(y) == "number" then
         -- Sometimes the x and y coords have a space between the - symbol and the rest of the number. Strip it out.
         y = y:gsub(" ", "")
         x = x:gsub(" ", "")
         if unrecognized then
-            lsPrintln("UNRECOGNIZED")
             if config.perception > 0 then
                 ore_id = unrecognized_table[config.perception]
             else
