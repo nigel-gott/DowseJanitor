@@ -1,45 +1,116 @@
 dofile("common.inc")
 dofile("settings.inc")
 dofile("screen_reader_common.inc")
-json = dofile("json.lua")
+local json = dofile("json.lua")
+local http = require("socket.http");
+
+
+TEST = false
 
 NEARBY_TEXT = "nearby"
-NOTHING_TEXT = "nothing"
-ONTOP_TEXT = "ontop"
-RECOGNIZE_TEXT = "recognize"
+UNRECOGNIZE_TEXT = "recognize"
 
 NEARBY_DISITANCE = 10
 ONTOP_DISTANCE = 1
 
+MIN_ORE_ID = -1
+ORES = {
+    [-1] = {
+        name = "sand",
+        unrecognized = -1,
+        recognized = -1,
+    },
+    [0] = {
+        name = "Copper",
+        unrecognized = -1,
+        recognized = 0,
+    },
+    {
+        name = "Iron",
+        unrecognized = 1,
+        recognized = 2,
+    },
+    {
+        name = "Tin",
+        unrecognized = 3,
+        recognized = 4,
+    },
+    {
+        name = "Aluminum",
+        unrecognized = 2,
+        recognized = 5,
+    },
+    {
+        name = "Lead",
+        unrecognized = 3,
+        recognized = 5,
+    },
+    {
+        name = "Zinc",
+        unrecognized = 3,
+        recognized = 6,
+    },
+    {
+        name = "Titanium",
+        unrecognized = 6,
+        recognized = 10,
+    },
+    {
+        name = "Tungsten",
+        unrecognized = 4,
+        recognized = 8,
+    },
+    {
+        name = "Antimony",
+        unrecognized = 7,
+        recognized = 13,
+    },
+    {
+        name = "Lithium",
+        unrecognized = 7,
+        recognized = 13,
+    },
+    {
+        name = "Silver",
+        unrecognized = 7,
+        recognized = 15,
+    },
+    {
+        name = "Strontium",
+        unrecognized = 7,
+        recognized = 14,
+    },
+    {
+        name = "Magnesium",
+        unrecognized = 8,
+        recognized = 16,
+    },
+    {
+        name = "Platinum",
+        unrecognized = 13,
+        recognized = 24,
+    },
+    {
+        name = "Gold",
+        unrecognized = 15,
+        recognized = 24,
+    },
 
-METAL_NAMES = {
-    RECOGNIZE_TEXT,
-    "Copper",
-    "Iron",
-    "Tin",
-    "Aluminum",
-    "Zinc",
-    "Lead",
-    "Tungsten",
-    "Titanium",
-    "Lithium",
-    "Antimony",
-    "Strontium",
-    "Silver",
-    "Magnesiun",
-    "Platinum",
-    "Gold",
-    NOTHING_TEXT,
 }
 
 RED = 0xFF2020ff
 BLACK = 0x000000ff
 WHITE = 0xFFFFFFff
 
-DOWSING_TABLE_FILENAME = "dowsing_table.txt"
-DOWSING_CSV_FILENAME = "dowsing_csv.txt"
-DOWSING_JSON_FILENAME = "dowsing_json.txt"
+DOWSING_TABLE_FILENAME = "dowse_table.txt"
+DOWSING_CSV_FILENAME = "dowse_csv.txt"
+DOWSING_JSON_FILENAME = "dowse_json.txt"
 SOUND_FILENAME = "cheer.wav"
+
+UPDATE_URL_FORMAT_STRING = "http://atitd.unsanctioned.net/dowser_test/changecell?x=%d&y=%d&val=%d&perception=%d"
+
+MIN_PERCEPTION=0
+MAX_PERCEPTION=25
 
 
 askText = [[If you are using automove make sure the chat is minimized / not selected.
@@ -52,6 +123,8 @@ NUM_STEPS = 5
 added_this_run = 0
 latest_found = "Nothing found so far."
 
+dowsing_table = {}
+
 -- Script start
 function doit()
     config = getUserParams()
@@ -59,17 +132,40 @@ function doit()
     runMacro()
 end
 
+function setupTables()
+    _, dowsing_table = deserialize(DOWSING_TABLE_FILENAME)
+    dowsing_table = dowsing_table or {}
+
+    unrecognized_table = {}
+    for p=MIN_PERCEPTION, MAX_PERCEPTION do
+        local max_unrecognized = MIN_PERCEPTION-1
+        local ore_id = MIN_ORE_ID
+        for i=MIN_ORE_ID, #ORES do
+            local unrecognized = ORES[i].unrecognized
+            if unrecognized <= p and unrecognized > max_unrecognized then
+                max_unrecognized = unrecognized
+                ore_id = i
+            end
+        end
+        unrecognized_table[p] = ore_id
+        if TEST then
+            lsPrintln(p .. " = " .. ORES[ore_id].name)
+        end
+    end
+end
+
 function runMacro()
-    setupDowsingTable()
+    setupTables()
 
     local timer = lsGetTimer()
 
-    while true do
+    local is_done = false
+    while not is_done do
         checkBreak()
 
         -- Slow the number of updates to reduce client lag whilst leaving the Automato UI responsive
         local now = lsGetTimer()
-        if now - timer > 500 then
+        if TEST or now - timer > 500 then
             timer = now
             srReadScreen()
             tryDowse()
@@ -85,33 +181,10 @@ function runMacro()
 
         lsDoFrame()
         lsSleep(50)
-    end
-end
-
-function setupDowsingTable()
-    result, dowsing_table = deserialize(DOWSING_TABLE_FILENAME)
-    dowsing_table = dowsing_table or {}
-
-    for i=1,#METAL_NAMES do
-        local name = getMetalName(i)
-        if not dowsing_table[name] then
-            dowsing_table[name] = {}
+        if TEST then
+            is_done = true
         end
     end
-end
-
-function getMetalName(name)
-    if type(name) == "number" then
-        name = METAL_NAMES[name]
-    end
-
-    if name == RECOGNIZE_TEXT then
-        name = "Unrecognized(" .. config.perception .. ")"
-    end
-    if name == NOTHING_TEXT then
-        name = "Nothing(" .. config.perception .. ")"
-    end
-    return name
 end
 
 function tryDowse()
@@ -129,21 +202,24 @@ function tryDowse()
 end
 
 function updateLog()
-    local chat = getChatText()
+    local chat = TEST and testChat() or getChatText()
     local changed = false
     for line=1, #chat do
         local line_text = chat[line][2]
-        local match, coords, nearby, nothing = parseChatLine(line_text)
-        if match and coords then
-            match = getMetalName(match)
-            if not dowsing_table[match][coords] then
-                if not nothing then
+        if TEST then
+            lsPrintln(line_text)
+        end
+        local result = parseChatLine(line_text)
+        if result then
+            if updateTableEntry(result) then
+                if result.ore_id >= 0 then
                     if config.play_sound then
                         lsPlaySound(SOUND_FILENAME);
                     end
-                    latest_found = "\n Found " .. match .. " at " .. coords .. "! \n" .. latest_found
+                    latest_found = "\n Found " .. result.match .. " at " .. result.index .. "! \n" .. latest_found
                 end
-                dowsing_table[match][coords] = nearby and NEARBY_DISITANCE or nothing and 0 or ONTOP_DISTANCE
+                dowsing_table[result.index] = result
+                updateServer(result)
                 added_this_run = added_this_run + 1
                 changed = true
             end
@@ -154,48 +230,78 @@ function updateLog()
     end
 end
 
+function testChat()
+    local test_chat = {
+        {[2]=UNRECOGNIZE_TEXT .. " -2 -2."}
+    }
+    for i=MIN_ORE_ID, #ORES do
+        table.insert(test_chat, {[2]=ORES[i].name .. " " .. i .. " " .. i .. "."})
+    end
+    return test_chat
+end
+
+function updateTableEntry(result)
+    local ore = ORES[result.ore_id]
+    if not result.unrecognized and ore.recognized > result.perception then
+        lsPrintln("ERROR:" .. ore.name .. " recognized at a lower perception than required! " .. ore.recognized .. " > " .. result.perception)
+        return false
+    end
+    return not dowsing_table[result.index] or result.perception > dowsing_table[result.index].perception
+end
+
+function updateServer(result)
+    local request_url = UPDATE_URL_FORMAT_STRING:format(result.x,result.y,result.ore_id,result.perception)
+    local res = http.request(request_url);
+    lsPrintln("request_url = " .. request_url .. " = " .. res)
+end
+
 function parseChatLine(line_text)
-    local match = ""
-    for i=1,#METAL_NAMES do
-        match = string.match(line_text, METAL_NAMES[i])
+    local ore_id
+    local match
+    for i=MIN_ORE_ID, #ORES do
+        match = string.match(line_text, ORES[i].name)
         if match then
+            ore_id = i
             break
         end
     end
     local nearby = string.match(line_text, NEARBY_TEXT)
-    local nothing = match == NOTHING_TEXT and NOTHING_TEXT or false
+    local unrecognized = string.match(line_text, UNRECOGNIZE_TEXT)
 
-    local coords
+    local result
     local x,y = string.match(line_text, "(%-?[%d ]+) (%-?[%d ]+).")
-    if x and y then
+    if (match or unrecognized) and x and y then
         -- Sometimes the x and y coords have a space between the - symbol and the rest of the number. Strip it out.
         y = y:gsub(" ", "")
         x = x:gsub(" ", "")
-        coords = x .. "," .. y
+        if unrecognized then
+            lsPrintln("UNRECOGNIZED")
+            if config.perception > 0 then
+                ore_id = unrecognized_table[config.perception]
+            else
+                lsPrintln("ERROR: unrecognized vein with 0 perception!")
+                return nil
+            end
+        end
+        result = {index=x .. "," .. y, x=x, y=y, ore_id=ore_id, nearby=nearby, unrecognized=unrecognized, perception=config.perception, match=ORES[ore_id].name}
     end
-    return match, coords, nearby, nothing
+    return result
 end
 
 function writeLog()
     local csv = createCSV()
-    serialize(csv, DOWSING_CSV_FILENAME)
-    serialize(dowsing_table, DOWSING_TABLE_FILENAME)
-    serialize(json.encode(dowsing_table), DOWSING_JSON_FILENAME)
+    if not TEST then
+        serialize(csv, DOWSING_CSV_FILENAME)
+        serialize(dowsing_table, DOWSING_TABLE_FILENAME)
+        serialize(json.encode(dowsing_table), DOWSING_JSON_FILENAME)
+    end
 end
 
 
 function createCSV()
     local csv = ""
-    for metal_name,_ in pairs(dowsing_table) do
-
-        csv = csv .. "\n" .. metal_name .. ":\n ---------------------------- \n"
-        for key,value in pairs(dowsing_table[metal_name]) do
-            local distance = ""
-            if config.distance_column and metal_name ~= NOTHING_TEXT then
-                distance = "," .. value
-            end
-            csv = csv .. key .. distance .. "\n"
-        end
+    for index,result in pairs(dowsing_table) do
+        csv = csv .. index .. "," .. result.perception .. "," .. result.ore_id .. "\n"
     end
     return csv
 end
@@ -294,10 +400,13 @@ function getUserParams()
         lsSleep(10)
     end
 
+    config.perception = config.perception < MIN_PERCEPTION and MIN_PERCEPTION or config.perception
+    config.perception = config.perception > MAX_PERCEPTION and MAX_PERCEPTION or config.perception
     writeSetting("play_sound",config.play_sound)
     writeSetting("walk_distance",config.walk_distance)
     writeSetting("auto_move",config.auto_move)
     writeSetting("distance_column",config.distance_column)
+    writeSetting("perception",config.perception)
     return config
 end
 
