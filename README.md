@@ -1,5 +1,7 @@
 # DowseJanitor
 
+WARNING: Current script is automatically sending dowse data to the map found http://atitd.unsanctioned.net/dowser_test/. It is very much still in testing. 
+
 Automatically dowses, if enabled moves your character and logs the dowsing results (what was found and where) to text files. Can be run passively whilst you travel about doing other things / chatting, just as long as you go to the main window and scroll through all the dowses it has done every so often!
 
 ## Installation
